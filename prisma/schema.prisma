@@ -1,0 +1,118 @@
+// Fun Facts App — database schema
+// Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session).
+// Phase 0 creates these three tables only. fact_revisions, reports and
+// this_day_in_history are NOT created yet — they land in later phases.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum VerificationStatus {
+  draft
+  pending_review
+  verified
+  rejected
+  needs_reverification
+}
+
+enum ReverificationCadence {
+  none
+  quarterly
+  semiannual
+  annual
+  biennial
+  custom
+}
+
+enum FactLengthClass {
+  short
+  medium
+  long
+}
+
+enum RetiredReason {
+  became_false
+  became_ambiguous
+  report_upheld
+  superseded
+  other
+}
+
+model Category {
+  id               String @id @default(uuid())
+  name             String
+  slug             String @unique
+  iconAsset        String @map("icon_asset")
+  targetProportion Float  @map("target_proportion")
+  displayOrder     Int    @map("display_order")
+
+  facts Fact[]
+
+  @@map("categories")
+}
+
+model Fact {
+  id         String   @id @default(uuid())
+  text       String
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  // 1-2 of the 21 pattern IDs from the reference doc. Null in Phase 0 (spec 2.2).
+  patternTags String[] @default([]) @map("pattern_tags")
+
+  // array[{url, name, accessed_date, tier}], see spec 2.4. Empty in Phase 0.
+  sources Json @default("[]")
+
+  wordCount       Int?             @map("word_count")
+  factLengthClass FactLengthClass? @map("fact_length_class")
+  qualityScore    Int?             @map("quality_score")
+
+  timeSensitive          Boolean                @default(false) @map("time_sensitive")
+  reverificationCadence  ReverificationCadence?  @map("reverification_cadence")
+  reverificationDueDate  DateTime?              @map("reverification_due_date") @db.Date
+
+  // TODO(phase4): must default to `draft` once the verification workflow (spec 2.4)
+  // lands, and only verified+active facts may ever be served. Defaulting to
+  // `verified` here is a Phase-0-only shortcut called out explicitly in the
+  // implementation plan (Phase 0 deliverables) as the single most dangerous
+  // shortcut in the build — an unverified fact reaching production is exactly
+  // the failure mode spec section 2.4 exists to prevent.
+  verificationStatus VerificationStatus @default(verified) @map("verification_status")
+  verificationNote   String?            @map("verification_note")
+
+  dateAdded        DateTime  @default(now()) @map("date_added") @db.Date
+  dateLastVerified DateTime? @map("date_last_verified") @db.Date
+
+  shareSlug String @unique @map("share_slug")
+
+  active        Boolean        @default(true)
+  retiredReason RetiredReason? @map("retired_reason")
+
+  supersededById String? @map("superseded_by")
+  supersededBy   Fact?   @relation("FactSupersession", fields: [supersededById], references: [id])
+  supersedes     Fact[]  @relation("FactSupersession")
+
+  reportsSinceReview Int @default(0) @map("reports_since_review")
+
+  @@index([categoryId])
+  @@map("facts")
+}
+
+model Session {
+  anonId String @id @default(uuid()) @map("anon_id")
+
+  // Server-side only (spec 3.3) — never stored in the cookie.
+  seenFactIds String[] @default([]) @map("seen_fact_ids")
+
+  lastHistoryFactShownDate DateTime? @map("last_history_fact_shown_date") @db.Date
+
+  createdAt    DateTime @default(now()) @map("created_at")
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+
+  @@map("sessions")
+}
