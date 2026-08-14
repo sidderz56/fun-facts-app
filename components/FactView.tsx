@@ -1,16 +1,23 @@
 import Link from "next/link";
 import type { FactLengthClass } from "@/lib/textMetrics";
 import AnotherButton from "@/components/AnotherButton";
+import ShareButton from "@/components/ShareButton";
+import { ogTitle } from "@/lib/ogText";
 
 type FactViewProps = {
   fact: {
     text: string;
     factLengthClass: FactLengthClass | null;
+    shareSlug: string;
   };
   category: {
     name: string;
     slug: string;
   };
+  // Shown as a small banner above the fact text — used when this fact's
+  // content is actually a superseding replacement for a retired fact
+  // (spec 4.4).
+  note?: string;
 };
 
 // Type size band picked from fact_length_class rather than auto-fitting
@@ -21,7 +28,7 @@ const SIZE_CLASSES: Record<FactLengthClass, string> = {
   long: "text-2xl sm:text-3xl",
 };
 
-export default function FactView({ fact, category }: FactViewProps) {
+export default function FactView({ fact, category, note }: FactViewProps) {
   const sizeClass = SIZE_CLASSES[fact.factLengthClass ?? "medium"];
 
   return (
@@ -35,7 +42,12 @@ export default function FactView({ fact, category }: FactViewProps) {
         </Link>
       </div>
 
-      <div className="flex flex-1 items-center justify-center px-6 py-8">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
+        {note && (
+          <p className="rounded-full bg-amber-100 px-4 py-1 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+            {note}
+          </p>
+        )}
         <p className={`max-w-2xl text-center font-semibold leading-snug ${sizeClass}`}>
           {fact.text}
         </p>
@@ -46,10 +58,7 @@ export default function FactView({ fact, category }: FactViewProps) {
         <Link href="/" className="action-button">
           Different Category
         </Link>
-        {/* TODO(phase2): wire up Web Share API + fallback icon row (spec 4.4) */}
-        <button type="button" disabled title="Coming in a later phase" className="action-button-disabled">
-          Share
-        </button>
+        <ShareButton shareSlug={fact.shareSlug} shareTitle={ogTitle(fact.text)} />
         <Link href="/" className="action-button">
           Home
         </Link>
