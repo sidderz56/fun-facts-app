@@ -21,45 +21,47 @@ type FactViewProps = {
 };
 
 // Type size band picked from fact_length_class rather than auto-fitting
-// arbitrary text (spec 2.9, 4.2).
+// arbitrary text (spec 2.9, 4.2). Sizes from the design handoff.
 const SIZE_CLASSES: Record<FactLengthClass, string> = {
-  short: "text-4xl sm:text-5xl",
-  medium: "text-3xl sm:text-4xl",
-  long: "text-2xl sm:text-3xl",
+  short: "text-[38px] font-medium leading-[1.3]",
+  medium: "text-[30px] font-medium leading-[1.35]",
+  long: "text-[24px] font-medium leading-[1.4]",
 };
 
 export default function FactView({ fact, category, note }: FactViewProps) {
   const sizeClass = SIZE_CLASSES[fact.factLengthClass ?? "medium"];
 
   return (
-    <main className="flex min-h-screen flex-1 flex-col">
-      <div className="p-4">
+    <main className="box-border mx-auto flex w-full max-w-[720px] flex-1 flex-col overflow-y-auto">
+      <div className="px-6 pt-[22px]">
         <Link
           href="/"
-          className="text-sm font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--accent-muted)]"
         >
-          {category.name}
+          <span>&larr;</span>
+          <span>{category.name}</span>
         </Link>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 pt-8 pb-10">
         {note && (
-          <p className="rounded-full bg-amber-100 px-4 py-1 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <p
+            className="rounded-full px-4 py-1 text-sm font-medium"
+            style={{ background: "var(--random-tile-bg)", color: "var(--text-body)" }}
+          >
             {note}
           </p>
         )}
-        <p className={`max-w-2xl text-center font-semibold leading-snug ${sizeClass}`}>
-          {fact.text}
-        </p>
+        <p className={`max-w-[560px] text-center font-serif ${sizeClass}`}>{fact.text}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 px-6 pt-5 pb-8">
         <AnotherButton categorySlug={category.slug} />
-        <Link href="/" className="action-button">
-          Different Category
+        <Link href="/" className="btn-secondary text-center">
+          Different category
         </Link>
         <ShareButton shareSlug={fact.shareSlug} shareTitle={ogTitle(fact.text)} />
-        <Link href="/" className="action-button">
+        <Link href="/" className="btn-secondary text-center">
           Home
         </Link>
       </div>

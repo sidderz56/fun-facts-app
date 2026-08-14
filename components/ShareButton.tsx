@@ -47,15 +47,18 @@ export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps)
 
   return (
     <div className="relative">
-      <button type="button" onClick={handleClick} className="action-button w-full">
+      <button type="button" onClick={handleClick} className="btn-secondary w-full">
         Share
       </button>
       {menuOpen && (
-        <div className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-max flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-2 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+        <div
+          className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-max flex-col gap-1 rounded-xl p-2 text-sm shadow-lg"
+          style={{ background: "var(--page-bg)", border: "1px solid var(--btn-secondary-bg)" }}
+        >
           <button
             type="button"
             onClick={handleCopy}
-            className="whitespace-nowrap rounded-lg px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="whitespace-nowrap rounded-lg px-3 py-2 text-left hover:bg-[var(--btn-secondary-bg)]"
           >
             {copied ? "Copied!" : copyFailed ? "Couldn't copy" : "Copy link"}
           </button>
@@ -64,7 +67,7 @@ export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps)
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setMenuOpen(false)}
-            className="whitespace-nowrap rounded-lg px-3 py-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            className="whitespace-nowrap rounded-lg px-3 py-2 text-left hover:bg-[var(--btn-secondary-bg)]"
           >
             Share on X
           </a>

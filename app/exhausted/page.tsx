@@ -14,16 +14,16 @@ export default async function ExhaustedPage({ searchParams }: ExhaustedPageProps
     if (!category) notFound();
 
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 text-center">
-        <p className="max-w-md text-2xl font-semibold">
-          You&rsquo;ve seen every fact in {category.name}! ✨
+      <main className="flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto p-6 text-center">
+        <p className="max-w-[420px] font-serif text-[26px]">
+          You&rsquo;ve seen every fact in {category.name}.
         </p>
-        <div className="grid w-full max-w-sm grid-cols-2 gap-3">
-          <a href={`/api/reshuffle?scope=category&category=${category.slug}`} className="action-button">
-            Reshuffle
+        <div className="flex w-full max-w-[320px] flex-col gap-3">
+          <a href={`/api/reshuffle?scope=category&category=${category.slug}`} className="btn-primary">
+            Reshuffle this category
           </a>
-          <Link href="/" className="action-button">
-            Different Category
+          <Link href="/" className="btn-secondary text-center">
+            Different category
           </Link>
         </div>
       </main>
@@ -33,13 +33,13 @@ export default async function ExhaustedPage({ searchParams }: ExhaustedPageProps
   // Global exhaustion (spec 4.3) — reachable via Random when the eligible
   // pool is empty, or by exhausting the last remaining category.
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 text-center">
-      <p className="max-w-md text-2xl font-semibold">You&rsquo;ve seen every fact on the site! ✨</p>
-      <div className="flex w-full max-w-sm flex-col items-center gap-4">
-        <a href="/api/reshuffle?scope=all" className="action-button w-full">
-          Reshuffle Everything
+    <main className="flex flex-1 flex-col items-center justify-center gap-8 overflow-y-auto p-6 text-center">
+      <p className="max-w-[420px] font-serif text-[26px]">You&rsquo;ve seen every fact on the site.</p>
+      <div className="flex w-full max-w-[320px] flex-col gap-3">
+        <a href="/api/reshuffle?scope=all" className="btn-primary">
+          Reshuffle everything
         </a>
-        <Link href="/" className="text-sm font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+        <Link href="/" className="text-sm font-semibold text-[var(--home-link)]">
           Home
         </Link>
       </div>

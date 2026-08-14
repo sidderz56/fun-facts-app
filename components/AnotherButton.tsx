@@ -56,7 +56,7 @@ export default function AnotherButton({ categorySlug }: AnotherButtonProps) {
   }
 
   return (
-    <button type="button" onClick={handleClick} disabled={pending} className="action-button">
+    <button type="button" onClick={handleClick} disabled={pending} className="btn-primary">
       {pending ? "Loading…" : "Another"}
     </button>
   );
