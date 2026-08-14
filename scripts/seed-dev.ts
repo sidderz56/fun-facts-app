@@ -13,6 +13,7 @@ import { PrismaClient } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { countWords, factLengthClass } from "../lib/textMetrics";
 import { generateShareSlug } from "../lib/shareSlug";
+import { getMonthDay } from "../lib/historyCore";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -67,6 +68,33 @@ function placeholderText(categoryName: string, index: number, targetWords: numbe
   return `[PLACEHOLDER ${categoryName} ${index}] ${placeholderBody(targetWords)}`;
 }
 
+// A handful of this_day_in_history entries (spec 3.4, plan Phase 3) — enough
+// to exercise the real cases, not the full 366-day coverage that's a launch
+// (Phase 8) task:
+// - today's actual date, so the dev home card always has something to show
+// - one date with two candidates, so year-over-year rotation is testable
+// - one date with a single candidate, the common case
+function buildHistorySeeds(): { monthDay: string; text: string }[] {
+  return [
+    {
+      monthDay: getMonthDay(),
+      text: "[PLACEHOLDER This Day 1] A placeholder this-day-in-history fact for today's date, seeded dynamically so the home card always has something to show in dev.",
+    },
+    {
+      monthDay: "01-01",
+      text: "[PLACEHOLDER This Day 2a] First of two placeholder candidates for January 1st, seeded so year-over-year rotation between candidates can be tested.",
+    },
+    {
+      monthDay: "01-01",
+      text: "[PLACEHOLDER This Day 2b] Second of two placeholder candidates for January 1st, seeded so year-over-year rotation between candidates can be tested.",
+    },
+    {
+      monthDay: "07-04",
+      text: "[PLACEHOLDER This Day 3] A single placeholder candidate for July 4th, to check the single-entry-per-date case still works cleanly.",
+    },
+  ];
+}
+
 async function main() {
   console.log("Seeding categories...");
   const categoryRecords = [];
@@ -110,6 +138,26 @@ async function main() {
   }
 
   console.log(`Done. ${categoryRecords.length} categories, ${factCount} facts.`);
+
+  console.log("Seeding this-day-in-history entries...");
+  // Idempotent like the fact seeding above: wipe and re-insert rather than
+  // accumulate duplicates across repeated `npm run seed` runs.
+  await prisma.thisDayInHistory.deleteMany({});
+  const historySeeds = buildHistorySeeds();
+  for (const seed of historySeeds) {
+    const wordCount = countWords(seed.text);
+    await prisma.thisDayInHistory.create({
+      data: {
+        monthDay: seed.monthDay,
+        text: seed.text,
+        wordCount,
+        shareSlug: generateShareSlug(),
+        // verificationStatus defaults to `verified` — same Phase 0-style
+        // shortcut as Fact, called out in schema.prisma with a TODO(phase4).
+      },
+    });
+  }
+  console.log(`Done. ${historySeeds.length} this-day-in-history entries.`);
 }
 
 main()

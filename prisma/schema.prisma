@@ -1,7 +1,7 @@
 // Fun Facts App — database schema
-// Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session).
-// Phase 0 creates these three tables only. fact_revisions, reports and
-// this_day_in_history are NOT created yet — they land in later phases.
+// Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session),
+// 3.4 (ThisDayInHistory, added Phase 3). fact_revisions and reports are NOT
+// created yet — they land in later phases.
 
 generator client {
   provider = "prisma-client"
@@ -101,6 +101,40 @@ model Fact {
 
   @@index([categoryId])
   @@map("facts")
+}
+
+model ThisDayInHistory {
+  id String @id @default(uuid())
+
+  // "MM-DD" — deliberately NOT unique (spec 3.4): multiple candidate facts
+  // per date so the same user doesn't see the identical entry every year,
+  // and a retired entry doesn't leave a hole in the calendar.
+  monthDay String @map("month_day")
+
+  text String
+
+  // array[{url, name, accessed_date, tier}], same requirements as 2.4. Empty in Phase 3.
+  sources Json @default("[]")
+
+  wordCount Int? @map("word_count")
+
+  shareSlug String @unique @map("share_slug")
+
+  // TODO(phase4): same Phase-0-style shortcut as Fact.verificationStatus —
+  // must default to `draft` once the verification workflow lands.
+  verificationStatus VerificationStatus @default(verified) @map("verification_status")
+
+  qualityScore Int? @map("quality_score")
+
+  // Drives year-over-year rotation (spec 3.4): among active+verified
+  // entries for today's month_day, the oldest date_last_shown (nulls
+  // first) is served, tie-broken by highest quality_score.
+  dateLastShown DateTime? @map("date_last_shown") @db.Date
+
+  active Boolean @default(true)
+
+  @@index([monthDay])
+  @@map("this_day_in_history")
 }
 
 model Session {

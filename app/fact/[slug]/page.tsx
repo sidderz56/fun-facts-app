@@ -2,32 +2,51 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { getOrCreateSession, markFactSeen } from "@/lib/session";
+import { markHistoryEntryShown } from "@/lib/history";
+import { countWords, factLengthClass } from "@/lib/textMetrics";
 import FactView from "@/components/FactView";
 import RetiredNotice from "@/components/RetiredNotice";
 import { ogTitle, ogDescription } from "@/lib/ogText";
 
 type FactPageProps = { params: Promise<{ slug: string }> };
 
+// This day in history entries aren't tied to a category (spec 3.4), so the
+// back-link shows this instead. An empty slug isn't a real category — the
+// selection routes (next-fact, prefetch-next) already treat a blank
+// category param as "no category specified" and fall back to a Random pick,
+// which is a reasonable "Another" behavior when there's no category to
+// continue in.
+const HISTORY_CATEGORY = { name: "On this day", slug: "" };
+
 // A missing slug is a genuine 404; a retired one is not — the URL may have
 // been circulating for years, and per spec 4.4 it must keep resolving,
-// showing the replacement fact if one was written.
+// showing the replacement fact if one was written. Also checks
+// this_day_in_history (spec 3.4): those entries share the same /fact/{slug}
+// URL space and reuse this same view.
 async function resolveDisplayFact(slug: string) {
   const fact = await prisma.fact.findUnique({
     where: { shareSlug: slug },
     include: { category: true },
   });
-  if (!fact) return null;
-  if (fact.active) return { original: fact, display: fact };
 
-  if (fact.supersededById) {
-    const replacement = await prisma.fact.findUnique({
-      where: { id: fact.supersededById },
-      include: { category: true },
-    });
-    if (replacement) return { original: fact, display: replacement };
+  if (fact) {
+    if (fact.active) return { kind: "fact" as const, original: fact, display: fact };
+
+    if (fact.supersededById) {
+      const replacement = await prisma.fact.findUnique({
+        where: { id: fact.supersededById },
+        include: { category: true },
+      });
+      if (replacement) return { kind: "fact" as const, original: fact, display: replacement };
+    }
+
+    return { kind: "fact" as const, original: fact, display: null };
   }
 
-  return { original: fact, display: null };
+  const historyEntry = await prisma.thisDayInHistory.findUnique({ where: { shareSlug: slug } });
+  if (historyEntry) return { kind: "history" as const, entry: historyEntry };
+
+  return null;
 }
 
 export async function generateMetadata({ params }: FactPageProps): Promise<Metadata> {
@@ -35,10 +54,11 @@ export async function generateMetadata({ params }: FactPageProps): Promise<Metad
   const resolved = await resolveDisplayFact(slug);
   if (!resolved) return {};
 
-  const title = resolved.display ? ogTitle(resolved.display.text) : "Fun Fact: retired";
-  const description = resolved.display
-    ? ogDescription(resolved.display.text)
-    : "This fact has been retired.";
+  const text =
+    resolved.kind === "history" ? resolved.entry.text : (resolved.display?.text ?? null);
+
+  const title = text ? ogTitle(text) : "Fun Fact: retired";
+  const description = text ? ogDescription(text) : "This fact has been retired.";
 
   return {
     title,
@@ -52,6 +72,23 @@ export default async function FactPage({ params }: FactPageProps) {
   const { slug } = await params;
   const resolved = await resolveDisplayFact(slug);
   if (!resolved) notFound();
+
+  if (resolved.kind === "history") {
+    const { entry } = resolved;
+    // Updates date_last_shown so next year's rotation moves on (spec 3.4).
+    await markHistoryEntryShown(entry.id);
+
+    return (
+      <FactView
+        fact={{
+          text: entry.text,
+          factLengthClass: factLengthClass(entry.wordCount ?? countWords(entry.text)),
+          shareSlug: entry.shareSlug,
+        }}
+        category={HISTORY_CATEGORY}
+      />
+    );
+  }
 
   const { original, display } = resolved;
   const session = await getOrCreateSession();

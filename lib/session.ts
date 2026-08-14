@@ -36,3 +36,12 @@ export async function markFactSeen(anonId: string, factId: string, currentSeen: 
     },
   });
 }
+
+// Marks that this session has seen today's history card — gates the
+// once-daily full-width display (spec 3.3, 4.1).
+export async function markHistoryShownToday(anonId: string) {
+  await prisma.session.update({
+    where: { anonId },
+    data: { lastHistoryFactShownDate: new Date() },
+  });
+}

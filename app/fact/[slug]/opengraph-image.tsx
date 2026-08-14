@@ -6,15 +6,21 @@ export const contentType = "image/png";
 
 async function resolveDisplayText(slug: string): Promise<string> {
   const fact = await prisma.fact.findUnique({ where: { shareSlug: slug } });
-  if (!fact) return "Fun Fact";
-  if (fact.active) return fact.text;
+  if (fact) {
+    if (fact.active) return fact.text;
 
-  if (fact.supersededById) {
-    const replacement = await prisma.fact.findUnique({ where: { id: fact.supersededById } });
-    if (replacement) return replacement.text;
+    if (fact.supersededById) {
+      const replacement = await prisma.fact.findUnique({ where: { id: fact.supersededById } });
+      if (replacement) return replacement.text;
+    }
+
+    return "This fact has been retired.";
   }
 
-  return "This fact has been retired.";
+  const historyEntry = await prisma.thisDayInHistory.findUnique({ where: { shareSlug: slug } });
+  if (historyEntry) return historyEntry.text;
+
+  return "Fun Fact";
 }
 
 export default async function Image({ params }: { params: Promise<{ slug: string }> }) {
