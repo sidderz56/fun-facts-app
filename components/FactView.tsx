@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { FactLengthClass } from "@/lib/textMetrics";
+import AnotherButton from "@/components/AnotherButton";
 
 type FactViewProps = {
   fact: {
@@ -41,13 +42,7 @@ export default function FactView({ fact, category }: FactViewProps) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
-        {/* Plain <a>, not next/link's <Link>: this is a side-effecting request
-            (picks + records a new fact), so it must never be served from
-            Next's client-side prefetch/router cache — every tap needs a
-            fresh server hit. */}
-        <a href={`/api/next-fact?category=${category.slug}`} className="action-button">
-          Another
-        </a>
+        <AnotherButton categorySlug={category.slug} />
         <Link href="/" className="action-button">
           Different Category
         </Link>
