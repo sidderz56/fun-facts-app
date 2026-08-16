@@ -1,24 +1,31 @@
 import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
+import { SERVABLE_VERIFICATION_STATUSES } from "@/lib/verification";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
+function isServable(status: string): boolean {
+  return (SERVABLE_VERIFICATION_STATUSES as readonly string[]).includes(status);
+}
+
 async function resolveDisplayText(slug: string): Promise<string> {
   const fact = await prisma.fact.findUnique({ where: { shareSlug: slug } });
   if (fact) {
-    if (fact.active) return fact.text;
+    if (fact.active) return isServable(fact.verificationStatus) ? fact.text : "Fun Fact";
 
     if (fact.supersededById) {
       const replacement = await prisma.fact.findUnique({ where: { id: fact.supersededById } });
-      if (replacement) return replacement.text;
+      if (replacement && isServable(replacement.verificationStatus)) return replacement.text;
     }
 
     return "This fact has been retired.";
   }
 
   const historyEntry = await prisma.thisDayInHistory.findUnique({ where: { shareSlug: slug } });
-  if (historyEntry) return historyEntry.text;
+  if (historyEntry && historyEntry.active && isServable(historyEntry.verificationStatus)) {
+    return historyEntry.text;
+  }
 
   return "Fun Fact";
 }

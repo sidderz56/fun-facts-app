@@ -3,11 +3,12 @@
 // lib/historyCore.ts.
 import { prisma } from "@/lib/db";
 import { getMonthDay, pickHistoryEntry } from "@/lib/historyCore";
+import { SERVABLE_VERIFICATION_STATUSES } from "@/lib/verification";
 
 export async function getTodayHistoryEntry() {
   const monthDay = getMonthDay();
   const candidates = await prisma.thisDayInHistory.findMany({
-    where: { monthDay, active: true, verificationStatus: "verified" },
+    where: { monthDay, active: true, verificationStatus: { in: [...SERVABLE_VERIFICATION_STATUSES] } },
   });
   return pickHistoryEntry(candidates);
 }

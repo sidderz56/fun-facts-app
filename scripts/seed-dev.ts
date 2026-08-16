@@ -1,4 +1,5 @@
-// Dev seed script (spec 2.1, plan Phase 0 deliverables).
+// Dev seed script (spec 2.1, plan Phase 0 deliverables; Phase 4 routes facts
+// through the real create/verify mutation layer).
 // Inserts the 9 categories with their target proportions, plus 5 obviously-
 // placeholder facts each (45 total), spanning the short/medium/long word-count
 // bands so fact-view typography can be evaluated honestly.
@@ -9,14 +10,12 @@
 // Run with: npm run seed
 
 import "dotenv/config";
-import { PrismaClient } from "../app/generated/prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { countWords, factLengthClass } from "../lib/textMetrics";
+import { prisma } from "../lib/db";
+import { countWords } from "../lib/textMetrics";
 import { generateShareSlug } from "../lib/shareSlug";
 import { getMonthDay } from "../lib/historyCore";
-
-const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
-const prisma = new PrismaClient({ adapter });
+import { createFact, verifyFact } from "../lib/factMutations";
+import { canReachVerified, type Source } from "../lib/verification";
 
 type CategorySeed = {
   name: string;
@@ -55,6 +54,26 @@ const FILLER_WORDS = [
   "genuine", "fun", "fact", "sitting", "in", "roughly", "this", "length",
   "band", "so", "type", "sizing", "can", "be", "judged", "honestly.",
 ];
+
+// Obviously-fake but structurally valid (spec 2.4: >=2 sources, >=1
+// primary) — lets placeholder facts actually pass the same verification
+// gate real content will have to pass, rather than bypassing it.
+const PLACEHOLDER_SOURCES: Source[] = [
+  {
+    url: "https://example.gov/placeholder-primary-source",
+    name: "Example.gov (placeholder primary source)",
+    accessedDate: "2026-01-01",
+    tier: "primary",
+  },
+  {
+    url: "https://example.com/placeholder-secondary-source",
+    name: "Example.com (placeholder secondary source)",
+    accessedDate: "2026-01-01",
+    tier: "secondary",
+  },
+];
+
+const PLACEHOLDER_NOTE = "Seed placeholder — not real editorial content.";
 
 function placeholderBody(targetWords: number): string {
   const words: string[] = [];
@@ -115,24 +134,28 @@ async function main() {
   console.log("Seeding placeholder facts...");
   let factCount = 0;
   for (const category of categoryRecords) {
-    // Wipe this category's placeholder facts first so re-running the script
-    // is idempotent instead of piling up duplicates.
+    // Wipe this category's placeholder facts (and their revisions, via
+    // cascade) first so re-running the script is idempotent instead of
+    // piling up duplicates. This hard-delete is a dev-only reset — the
+    // app's own code (lib/factMutations.ts) never deletes a Fact (spec 3.5).
     await prisma.fact.deleteMany({ where: { categoryId: category.id } });
 
     for (let i = 0; i < BODY_WORD_TARGETS.length; i++) {
       const text = placeholderText(category.name, i + 1, BODY_WORD_TARGETS[i]);
-      const wordCount = countWords(text);
-      await prisma.fact.create({
-        data: {
+
+      // Real create -> verify flow (spec 2.4 steps 1 & 3), same path real
+      // content will use — proves the Phase 4 gate actually accepts
+      // well-formed data instead of just rejecting bad data.
+      const created = await createFact(
+        {
           text,
           categoryId: category.id,
-          wordCount,
-          factLengthClass: factLengthClass(wordCount),
-          shareSlug: generateShareSlug(),
-          // verificationStatus defaults to `verified` — the Phase 0 shortcut
-          // called out in schema.prisma with a TODO(phase4).
+          sources: PLACEHOLDER_SOURCES,
+          verificationNote: PLACEHOLDER_NOTE,
         },
-      });
+        "system"
+      );
+      await verifyFact(created.id, "system");
       factCount++;
     }
   }
@@ -141,19 +164,39 @@ async function main() {
 
   console.log("Seeding this-day-in-history entries...");
   // Idempotent like the fact seeding above: wipe and re-insert rather than
-  // accumulate duplicates across repeated `npm run seed` runs.
+  // accumulate duplicates across repeated `npm run seed` runs. No revision
+  // log for this table (not in spec 3.5's scope), so no mutation-layer
+  // helper exists for it — self-check against the same gate instead.
   await prisma.thisDayInHistory.deleteMany({});
   const historySeeds = buildHistorySeeds();
   for (const seed of historySeeds) {
     const wordCount = countWords(seed.text);
+
+    // this_day_in_history has no verification_note column (spec 3.4's field
+    // list omits it) — PLACEHOLDER_NOTE here only satisfies the check
+    // function's interface, it isn't persisted. That's fine: these seeds
+    // stay under the 50-word/2-source thresholds that would actually
+    // require a note.
+    const check = canReachVerified({
+      sources: PLACEHOLDER_SOURCES,
+      verificationNote: PLACEHOLDER_NOTE,
+      wordCount,
+      timeSensitive: false,
+      reverificationCadence: null,
+      reverificationDueDate: null,
+    });
+    if (!check.ok) {
+      throw new Error(`History seed for ${seed.monthDay} fails verification: ${check.reasons.join("; ")}`);
+    }
+
     await prisma.thisDayInHistory.create({
       data: {
         monthDay: seed.monthDay,
         text: seed.text,
         wordCount,
+        sources: PLACEHOLDER_SOURCES as unknown as object,
+        verificationStatus: "verified",
         shareSlug: generateShareSlug(),
-        // verificationStatus defaults to `verified` — same Phase 0-style
-        // shortcut as Fact, called out in schema.prisma with a TODO(phase4).
       },
     });
   }

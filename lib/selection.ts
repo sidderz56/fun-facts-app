@@ -3,10 +3,11 @@
 // decisions to the pure, unit-tested functions in lib/selectionCore.ts.
 import { prisma } from "@/lib/db";
 import { unseenFacts, eligibleCategoryIds, weightedPick } from "@/lib/selectionCore";
+import { SERVABLE_VERIFICATION_STATUSES } from "@/lib/verification";
 
 export async function pickCategoryFact(categoryId: string, seenFactIds: string[]) {
   const facts = await prisma.fact.findMany({
-    where: { categoryId, active: true, verificationStatus: "verified" },
+    where: { categoryId, active: true, verificationStatus: { in: [...SERVABLE_VERIFICATION_STATUSES] } },
     include: { category: true },
   });
 
@@ -18,7 +19,7 @@ export async function pickCategoryFact(categoryId: string, seenFactIds: string[]
 
 export async function getEligibleCategoryIds(seenFactIds: string[]): Promise<string[]> {
   const facts = await prisma.fact.findMany({
-    where: { active: true, verificationStatus: "verified" },
+    where: { active: true, verificationStatus: { in: [...SERVABLE_VERIFICATION_STATUSES] } },
     select: { id: true, categoryId: true },
   });
   return eligibleCategoryIds(facts, seenFactIds);

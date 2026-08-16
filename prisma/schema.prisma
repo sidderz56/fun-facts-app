@@ -1,7 +1,7 @@
 // Fun Facts App — database schema
 // Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session),
-// 3.4 (ThisDayInHistory, added Phase 3). fact_revisions and reports are NOT
-// created yet — they land in later phases.
+// 3.4 (ThisDayInHistory, Phase 3), 3.5 (FactRevision, Phase 4). `reports`
+// (spec 3.6) is NOT created yet — it lands in Phase 5.
 
 generator client {
   provider = "prisma-client"
@@ -43,6 +43,17 @@ enum RetiredReason {
   other
 }
 
+enum RevisionChangeType {
+  created
+  text_edited
+  status_changed
+  retired
+  restored
+  reverified
+  quality_rescored
+  superseded
+}
+
 model Category {
   id               String @id @default(uuid())
   name             String
@@ -76,13 +87,12 @@ model Fact {
   reverificationCadence  ReverificationCadence?  @map("reverification_cadence")
   reverificationDueDate  DateTime?              @map("reverification_due_date") @db.Date
 
-  // TODO(phase4): must default to `draft` once the verification workflow (spec 2.4)
-  // lands, and only verified+active facts may ever be served. Defaulting to
-  // `verified` here is a Phase-0-only shortcut called out explicitly in the
-  // implementation plan (Phase 0 deliverables) as the single most dangerous
-  // shortcut in the build — an unverified fact reaching production is exactly
-  // the failure mode spec section 2.4 exists to prevent.
-  verificationStatus VerificationStatus @default(verified) @map("verification_status")
+  // Phase 4: the verification workflow (spec 2.4) is now enforced at the
+  // status transition (lib/verification.ts) — only `verified` and
+  // `needs_reverification` facts are ever served (both are "publishable"
+  // per spec 2.4 Phase 1 step 3). Defaults to `draft`, closing the Phase 0
+  // shortcut that previously defaulted every fact straight to `verified`.
+  verificationStatus VerificationStatus @default(draft) @map("verification_status")
   verificationNote   String?            @map("verification_note")
 
   dateAdded        DateTime  @default(now()) @map("date_added") @db.Date
@@ -99,8 +109,41 @@ model Fact {
 
   reportsSinceReview Int @default(0) @map("reports_since_review")
 
+  revisions FactRevision[]
+
   @@index([categoryId])
   @@map("facts")
+}
+
+// Append-only audit trail (spec 3.5) — nothing is ever updated in place or
+// hard-deleted. Every Fact state change (creation, edits, status changes,
+// retirement, etc.) writes a row here via lib/factMutations.ts.
+model FactRevision {
+  id     String @id @default(uuid())
+  factId String @map("fact_id")
+  // onDelete: Cascade exists only for scripts/seed-dev.ts's dev-only
+  // wipe-and-recreate cycle — the app's own code paths (lib/factMutations.ts)
+  // never delete a Fact at all, matching spec 3.5's "no fact is ever
+  // hard-deleted" guarantee.
+  fact Fact @relation(fields: [factId], references: [id], onDelete: Cascade)
+
+  changedAt  DateTime           @default(now()) @map("changed_at")
+  changeType RevisionChangeType @map("change_type")
+
+  previousText   String? @map("previous_text")
+  previousStatus String? @map("previous_status")
+  newStatus      String? @map("new_status")
+
+  // Free text; required on `retired` and `text_edited` (spec 3.5) — enforced
+  // by lib/factMutations.ts, not the schema, since drafts writing a
+  // `created` row have nothing to give a reason for.
+  reason String?
+
+  // "founder" or "system" (automated re-verification flag, auto-pull).
+  actor String
+
+  @@index([factId])
+  @@map("fact_revisions")
 }
 
 model ThisDayInHistory {
@@ -120,9 +163,10 @@ model ThisDayInHistory {
 
   shareSlug String @unique @map("share_slug")
 
-  // TODO(phase4): same Phase-0-style shortcut as Fact.verificationStatus —
-  // must default to `draft` once the verification workflow lands.
-  verificationStatus VerificationStatus @default(verified) @map("verification_status")
+  // Phase 4: same treatment as Fact.verificationStatus — defaults to
+  // `draft`, gated by the same lib/verification.ts checks (spec 3.4:
+  // sources and word_count follow "the same requirements as 2.4" / "2.9").
+  verificationStatus VerificationStatus @default(draft) @map("verification_status")
 
   qualityScore Int? @map("quality_score")
 

@@ -7,8 +7,13 @@ import { countWords, factLengthClass } from "@/lib/textMetrics";
 import FactView from "@/components/FactView";
 import RetiredNotice from "@/components/RetiredNotice";
 import { ogTitle, ogDescription } from "@/lib/ogText";
+import { SERVABLE_VERIFICATION_STATUSES } from "@/lib/verification";
 
 type FactPageProps = { params: Promise<{ slug: string }> };
+
+function isServable(status: string): boolean {
+  return (SERVABLE_VERIFICATION_STATUSES as readonly string[]).includes(status);
+}
 
 // This day in history entries aren't tied to a category (spec 3.4), so the
 // back-link shows this instead. An empty slug isn't a real category — the
@@ -23,6 +28,12 @@ const HISTORY_CATEGORY = { name: "On this day", slug: "" };
 // showing the replacement fact if one was written. Also checks
 // this_day_in_history (spec 3.4): those entries share the same /fact/{slug}
 // URL space and reuse this same view.
+//
+// A fact that's active but NOT verified/needs_reverification (draft,
+// pending_review, rejected) is treated as not found rather than shown:
+// unlike a retired fact, it was never legitimately servable in the first
+// place, so no share link for it should exist — Phase 4 closes this off
+// defensively rather than trusting that no such link ever leaks out.
 async function resolveDisplayFact(slug: string) {
   const fact = await prisma.fact.findUnique({
     where: { shareSlug: slug },
@@ -30,21 +41,29 @@ async function resolveDisplayFact(slug: string) {
   });
 
   if (fact) {
-    if (fact.active) return { kind: "fact" as const, original: fact, display: fact };
+    if (fact.active) {
+      return isServable(fact.verificationStatus)
+        ? { kind: "fact" as const, original: fact, display: fact }
+        : null;
+    }
 
     if (fact.supersededById) {
       const replacement = await prisma.fact.findUnique({
         where: { id: fact.supersededById },
         include: { category: true },
       });
-      if (replacement) return { kind: "fact" as const, original: fact, display: replacement };
+      if (replacement && isServable(replacement.verificationStatus)) {
+        return { kind: "fact" as const, original: fact, display: replacement };
+      }
     }
 
     return { kind: "fact" as const, original: fact, display: null };
   }
 
   const historyEntry = await prisma.thisDayInHistory.findUnique({ where: { shareSlug: slug } });
-  if (historyEntry) return { kind: "history" as const, entry: historyEntry };
+  if (historyEntry && historyEntry.active && isServable(historyEntry.verificationStatus)) {
+    return { kind: "history" as const, entry: historyEntry };
+  }
 
   return null;
 }
