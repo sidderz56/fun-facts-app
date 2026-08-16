@@ -136,9 +136,13 @@ async function main() {
   for (const category of categoryRecords) {
     // Wipe this category's placeholder facts (and their revisions, via
     // cascade) first so re-running the script is idempotent instead of
-    // piling up duplicates. This hard-delete is a dev-only reset — the
-    // app's own code (lib/factMutations.ts) never deletes a Fact (spec 3.5).
-    await prisma.fact.deleteMany({ where: { categoryId: category.id } });
+    // piling up duplicates. Scoped to the "[PLACEHOLDER" text prefix so this
+    // never touches real content — this hard-delete is a dev-only reset for
+    // fixture data specifically; the app's own code (lib/factMutations.ts)
+    // never deletes a Fact at all (spec 3.5).
+    await prisma.fact.deleteMany({
+      where: { categoryId: category.id, text: { startsWith: "[PLACEHOLDER" } },
+    });
 
     for (let i = 0; i < BODY_WORD_TARGETS.length; i++) {
       const text = placeholderText(category.name, i + 1, BODY_WORD_TARGETS[i]);
