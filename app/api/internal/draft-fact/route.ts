@@ -33,12 +33,16 @@ export async function POST(request: NextRequest) {
   const categorySlug = body?.categorySlug;
   const text = body?.text;
   const sources = body?.sources as Source[] | undefined;
+  const verificationNote = body?.verificationNote;
 
   if (typeof categorySlug !== "string" || typeof text !== "string" || !Array.isArray(sources)) {
     return NextResponse.json(
-      { ok: false, error: "Body must be { categorySlug: string, text: string, sources: Source[] }" },
+      { ok: false, error: "Body must be { categorySlug: string, text: string, sources: Source[], verificationNote?: string }" },
       { status: 400 }
     );
+  }
+  if (verificationNote !== undefined && typeof verificationNote !== "string") {
+    return NextResponse.json({ ok: false, error: "verificationNote must be a string if provided" }, { status: 400 });
   }
 
   const category = await prisma.category.findUnique({ where: { slug: categorySlug } });
@@ -47,7 +51,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const created = await createFact({ text, categoryId: category.id, sources }, "system");
+    const created = await createFact(
+      { text, categoryId: category.id, sources, verificationNote: verificationNote ?? null },
+      "system"
+    );
     const verified = await verifyFact(created.id, "system");
     return NextResponse.json({ ok: true, shareSlug: verified.shareSlug });
   } catch (e) {
