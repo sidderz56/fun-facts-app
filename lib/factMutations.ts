@@ -7,7 +7,7 @@
 // by tests.
 import { prisma } from "@/lib/db";
 import type { RetiredReason } from "@/app/generated/prisma/client";
-import { canReachVerified, type Source } from "@/lib/verification";
+import { canReachVerified, computeReverificationDueDate, type Source } from "@/lib/verification";
 import { countWords, factLengthClass } from "@/lib/textMetrics";
 import { generateShareSlug } from "@/lib/shareSlug";
 
@@ -198,6 +198,45 @@ export async function editFactText(factId: string, newText: string, params: { re
         previousText: fact.text,
         reason: params.reason,
         actor: params.actor,
+      },
+    });
+
+    return updated;
+  });
+}
+
+// spec 5.7 dashboard action "Confirm re-verification": updates
+// date_last_verified and recomputes the next due date, moving the fact back
+// to `verified` regardless of what it was before (draft facts don't carry a
+// reverification_due_date in the first place, so this is only ever reached
+// from `verified` or `needs_reverification`). For `custom` cadence the due
+// date can't be auto-computed — spec 2.5 says it's explicit — so the
+// founder supplies the new date via the dashboard form; every other cadence
+// computes it from today.
+export async function confirmReverification(
+  factId: string,
+  actor: string,
+  explicitDueDate?: Date | null
+) {
+  return prisma.$transaction(async (tx) => {
+    const fact = await tx.fact.findUniqueOrThrow({ where: { id: factId } });
+    const now = new Date();
+    const dueDate = fact.reverificationCadence
+      ? computeReverificationDueDate(fact.reverificationCadence, now, explicitDueDate ?? null)
+      : null;
+
+    const updated = await tx.fact.update({
+      where: { id: factId },
+      data: { dateLastVerified: now, reverificationDueDate: dueDate, verificationStatus: "verified" },
+    });
+
+    await tx.factRevision.create({
+      data: {
+        factId,
+        changeType: "reverified",
+        previousStatus: fact.verificationStatus,
+        newStatus: "verified",
+        actor,
       },
     });
 

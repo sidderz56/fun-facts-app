@@ -95,3 +95,18 @@ export async function submitReport(
 
   return { recorded: true };
 }
+
+// spec 5.7 dashboard action "Mark reviewed / dismiss reports": resolves
+// every open report on a fact and zeroes reports_since_review. No revision
+// row here — unlike every other write action in spec 5.7's table, this one
+// isn't listed as writing to the revision log, and change_type has no
+// enum value for it.
+export async function resolveReports(factId: string) {
+  await prisma.$transaction([
+    prisma.report.updateMany({
+      where: { factId, resolvedAt: null },
+      data: { resolvedAt: new Date() },
+    }),
+    prisma.fact.update({ where: { id: factId }, data: { reportsSinceReview: 0 } }),
+  ]);
+}
