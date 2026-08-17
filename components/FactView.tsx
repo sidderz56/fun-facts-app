@@ -2,10 +2,15 @@ import Link from "next/link";
 import type { FactLengthClass } from "@/lib/textMetrics";
 import AnotherButton from "@/components/AnotherButton";
 import ShareButton from "@/components/ShareButton";
+import ReportButton from "@/components/ReportButton";
 import { ogTitle } from "@/lib/ogText";
 
 type FactViewProps = {
   fact: {
+    // Omitted for "this day in history" entries (spec 3.4) — the Report
+    // record (spec 3.6) has a fact_id FK with no history-entry equivalent,
+    // so those aren't reportable and ReportButton doesn't render for them.
+    id?: string;
     text: string;
     factLengthClass: FactLengthClass | null;
     shareSlug: string;
@@ -65,6 +70,12 @@ export default function FactView({ fact, category, note }: FactViewProps) {
           Home
         </Link>
       </div>
+
+      {fact.id && (
+        <div className="px-6 pb-6">
+          <ReportButton factId={fact.id} />
+        </div>
+      )}
     </main>
   );
 }

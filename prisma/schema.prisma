@@ -1,7 +1,7 @@
 // Fun Facts App — database schema
 // Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session),
-// 3.4 (ThisDayInHistory, Phase 3), 3.5 (FactRevision, Phase 4). `reports`
-// (spec 3.6) is NOT created yet — it lands in Phase 5.
+// 3.4 (ThisDayInHistory, Phase 3), 3.5 (FactRevision, Phase 4), 3.6/5.3
+// (Report + abuse limiting, Phase 5).
 
 generator client {
   provider = "prisma-client"
@@ -110,6 +110,7 @@ model Fact {
   reportsSinceReview Int @default(0) @map("reports_since_review")
 
   revisions FactRevision[]
+  reports   Report[]
 
   @@index([categoryId])
   @@map("facts")
@@ -192,5 +193,55 @@ model Session {
   createdAt    DateTime @default(now()) @map("created_at")
   lastActiveAt DateTime @default(now()) @map("last_active_at")
 
+  reports Report[]
+
   @@map("sessions")
+}
+
+// Individual report rows, not just a counter — this is what makes dedup
+// possible (spec 3.6). One open report per (fact, anon_id): enforced here at
+// the application level (lib/reporting.ts checks before insert) AND at the
+// database level by a partial unique index added by hand in this model's
+// migration — Prisma's schema DSL has no `WHERE` clause for `@@unique`, so
+// `CREATE UNIQUE INDEX ... WHERE resolved_at IS NULL` was appended directly
+// to migrations/*_add_reports_and_config/migration.sql after generation.
+model Report {
+  id     String @id @default(uuid())
+  factId String @map("fact_id")
+  fact   Fact   @relation(fields: [factId], references: [id])
+  anonId String @map("anon_id")
+  session Session @relation(fields: [anonId], references: [anonId])
+
+  createdAt  DateTime  @default(now()) @map("created_at")
+  resolvedAt DateTime? @map("resolved_at")
+
+  @@index([factId])
+  @@index([anonId, createdAt])
+  @@map("reports")
+}
+
+// Transient store for the per-IP rate limit (spec 5.2, 5.3): IPs are used
+// only to blunt cookie-clearing abuse and must never land on the `reports`
+// row itself, so they live here instead, hashed, and pruned back to the
+// rolling 1-hour window on every write (lib/reporting.ts) rather than
+// retained indefinitely.
+model ReportRateLimitEvent {
+  id        String   @id @default(uuid())
+  ipHash    String   @map("ip_hash")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ipHash, createdAt])
+  @@map("report_rate_limit_events")
+}
+
+// Generic key/value application config (spec 5.3: "the threshold lives in
+// application config, not in code, and is editable without a deploy").
+// Only `auto_pull_threshold` exists today; any future tunable value not
+// worth a code change goes here rather than growing a new single-purpose
+// table each time.
+model AppConfig {
+  key   String @id
+  value String
+
+  @@map("app_config")
 }

@@ -205,6 +205,37 @@ export async function editFactText(factId: string, newText: string, params: { re
   });
 }
 
+// Auto-pull (spec 5.3): the system, not a founder, retiring a fact once
+// distinct open reports reach the configured threshold. Deliberately
+// leaves `retired_reason` null — spec 5.3 is explicit that `report_upheld`
+// is set "only when review confirms, not by the auto-pull itself," so this
+// is NOT retireFact() with a canned reason. The fact sits out
+// (active = false) pending the daily review, fully reversible via
+// restoreFact.
+export async function autoPullFact(factId: string, params: { reportCount: number }) {
+  return prisma.$transaction(async (tx) => {
+    const fact = await tx.fact.findUniqueOrThrow({ where: { id: factId } });
+
+    const updated = await tx.fact.update({
+      where: { id: factId },
+      data: { active: false },
+    });
+
+    await tx.factRevision.create({
+      data: {
+        factId,
+        changeType: "retired",
+        previousStatus: fact.verificationStatus,
+        newStatus: fact.verificationStatus,
+        reason: `Auto-pulled after ${params.reportCount} distinct open reports reached the configured threshold.`,
+        actor: "system",
+      },
+    });
+
+    return updated;
+  });
+}
+
 // Updates quality_score (spec 2.10) — an internal signal, not tied to
 // verification_status, so no reason is required (matches the dashboard's
 // permitted write-action list in spec 5.7, which lists "Re-score quality"

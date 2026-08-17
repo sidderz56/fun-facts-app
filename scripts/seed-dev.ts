@@ -115,6 +115,16 @@ function buildHistorySeeds(): { monthDay: string; text: string }[] {
 }
 
 async function main() {
+  console.log("Seeding app config...");
+  // spec 5.3: the auto-pull threshold lives in config, not code, so it can
+  // be edited without a deploy — upsert rather than create so a re-run
+  // never clobbers a value someone has since tuned in production.
+  await prisma.appConfig.upsert({
+    where: { key: "auto_pull_threshold" },
+    update: {},
+    create: { key: "auto_pull_threshold", value: "3" },
+  });
+
   console.log("Seeding categories...");
   const categoryRecords = [];
   for (const c of CATEGORIES) {
