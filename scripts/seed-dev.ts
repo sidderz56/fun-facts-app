@@ -13,7 +13,6 @@ import "dotenv/config";
 import { prisma } from "../lib/db";
 import { countWords } from "../lib/textMetrics";
 import { generateShareSlug } from "../lib/shareSlug";
-import { getMonthDay } from "../lib/historyCore";
 import { createFact, verifyFact } from "../lib/factMutations";
 import { canReachVerified, type Source } from "../lib/verification";
 
@@ -90,15 +89,18 @@ function placeholderText(categoryName: string, index: number, targetWords: numbe
 // A handful of this_day_in_history entries (spec 3.4, plan Phase 3) — enough
 // to exercise the real cases, not the full 366-day coverage that's a launch
 // (Phase 8) task:
-// - today's actual date, so the dev home card always has something to show
 // - one date with two candidates, so year-over-year rotation is testable
 // - one date with a single candidate, the common case
+//
+// Deliberately NOT seeding "today" dynamically anymore (Phase 8 pre-flight
+// audit): dev and prod share one database, so a date-shifting placeholder
+// re-triggers the "already handled?" check's blind spot every single new
+// calendar day — it did exactly that, live, the day this was found. Until
+// real 366-day coverage exists (spec 3.4's Coverage requirement), the
+// correct behavior for a day with no real entry is the spec's own
+// graceful fallback — the home card just hides the card — not a fake one.
 function buildHistorySeeds(): { monthDay: string; text: string }[] {
   return [
-    {
-      monthDay: getMonthDay(),
-      text: "[PLACEHOLDER This Day 1] A placeholder this-day-in-history fact for today's date, seeded dynamically so the home card always has something to show in dev.",
-    },
     {
       monthDay: "01-01",
       text: "[PLACEHOLDER This Day 2a] First of two placeholder candidates for January 1st, seeded so year-over-year rotation between candidates can be tested.",
@@ -144,6 +146,23 @@ async function main() {
   console.log("Seeding placeholder facts...");
   let factCount = 0;
   for (const category of categoryRecords) {
+    // Once a category has any real (non-placeholder) active fact, this
+    // script leaves it alone entirely — it must never wipe-and-reseed a
+    // category again after editorial content has landed. This is the fix
+    // for a real bug found in the Phase 8 pre-flight audit: without this
+    // check, re-running `npm run seed` for an unrelated reason (e.g.
+    // upserting app_config) unconditionally deleted and recreated every
+    // category's 5 placeholder facts — silently resurrecting content that
+    // had already been retired via the real editorial pipeline, live on
+    // production, because this script and prod share one database.
+    const hasRealContent = await prisma.fact.findFirst({
+      where: { categoryId: category.id, active: true, NOT: { text: { startsWith: "[PLACEHOLDER" } } },
+    });
+    if (hasRealContent) {
+      console.log(`  ${category.name}: has real content, skipping placeholder seeding.`);
+      continue;
+    }
+
     // Wipe this category's placeholder facts (and their revisions, via
     // cascade) first so re-running the script is idempotent instead of
     // piling up duplicates. Scoped to the "[PLACEHOLDER" text prefix so this
@@ -177,13 +196,33 @@ async function main() {
   console.log(`Done. ${categoryRecords.length} categories, ${factCount} facts.`);
 
   console.log("Seeding this-day-in-history entries...");
-  // Idempotent like the fact seeding above: wipe and re-insert rather than
-  // accumulate duplicates across repeated `npm run seed` runs. No revision
-  // log for this table (not in spec 3.5's scope), so no mutation-layer
-  // helper exists for it — self-check against the same gate instead.
-  await prisma.thisDayInHistory.deleteMany({});
+  // Same two fixes as the fact-placeholder loop above, found in the same
+  // Phase 8 audit: (1) scoped to the "[PLACEHOLDER" prefix instead of an
+  // unconditional deleteMany({}) that would have destroyed real
+  // this-day-in-history content the instant any existed, and (2) skips a
+  // month_day entirely once ANY entry (active real content, OR a
+  // deliberately deactivated placeholder — e.g. one retired with no real
+  // replacement yet) already exists for that date. Unlike the Fact table,
+  // there's no supersededBy chain here, so "deactivated" is itself a
+  // permanent signal that a founder decided this date shouldn't show fake
+  // content — a re-run must not silently undo that by only checking for
+  // *active* rows.
+  await prisma.thisDayInHistory.deleteMany({
+    where: { text: { startsWith: "[PLACEHOLDER" }, active: true },
+  });
   const historySeeds = buildHistorySeeds();
   for (const seed of historySeeds) {
+    const alreadyHandled = await prisma.thisDayInHistory.findFirst({
+      where: {
+        monthDay: seed.monthDay,
+        OR: [{ active: true, NOT: { text: { startsWith: "[PLACEHOLDER" } } }, { active: false }],
+      },
+    });
+    if (alreadyHandled) {
+      console.log(`  ${seed.monthDay}: already has real or deliberately-retired content, skipping.`);
+      continue;
+    }
+
     const wordCount = countWords(seed.text);
 
     // this_day_in_history has no verification_note column (spec 3.4's field

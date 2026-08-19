@@ -244,6 +244,37 @@ export async function confirmReverification(
   });
 }
 
+// spec 8 re-verification job: flips a fact from `verified` to
+// `needs_reverification` once its due date has passed. Both statuses are
+// servable (spec 2.4 Phase 1 step 3: "needs_reverification is explicitly
+// 'publishable now, flagged for later re-check'"), so this never
+// interrupts what users see — it just makes the fact's own record reflect
+// reality instead of relying solely on the admin dashboard's live
+// due-date query to notice. actor="system" since this runs unattended on
+// a schedule, matching auto-pull's precedent.
+export async function flagDueForReverification(factId: string) {
+  return prisma.$transaction(async (tx) => {
+    const fact = await tx.fact.findUniqueOrThrow({ where: { id: factId } });
+
+    const updated = await tx.fact.update({
+      where: { id: factId },
+      data: { verificationStatus: "needs_reverification" },
+    });
+
+    await tx.factRevision.create({
+      data: {
+        factId,
+        changeType: "status_changed",
+        previousStatus: fact.verificationStatus,
+        newStatus: "needs_reverification",
+        actor: "system",
+      },
+    });
+
+    return updated;
+  });
+}
+
 // Auto-pull (spec 5.3): the system, not a founder, retiring a fact once
 // distinct open reports reach the configured threshold. Deliberately
 // leaves `retired_reason` null — spec 5.3 is explicit that `report_upheld`

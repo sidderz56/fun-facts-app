@@ -5,6 +5,7 @@ import {
   validateStaleness,
   computeReverificationDueDate,
   canReachVerified,
+  SERVABLE_VERIFICATION_STATUSES,
   type Source,
 } from "./verification";
 
@@ -137,5 +138,25 @@ describe("canReachVerified (combined gate, spec 2.4/2.5/2.9)", () => {
   it("an 80-word fact cannot reach verified", () => {
     const result = canReachVerified({ ...validBase, wordCount: 80 });
     expect(result.ok).toBe(false);
+  });
+});
+
+// Plan Phase 4 acceptance criterion: "Add a test that asserts a draft fact
+// cannot be returned by any selection path — this is the guard against the
+// Phase 0 default silently surviving." lib/selection.ts's Prisma queries
+// filter every servable-fact lookup by exactly this constant
+// (`verificationStatus: { in: [...SERVABLE_VERIFICATION_STATUSES] }`), so
+// asserting its exact membership here is the guard: if `draft` (the Phase 0
+// shortcut default) ever got added back to this list, this is what would
+// catch it, without needing a live-DB integration test.
+describe("SERVABLE_VERIFICATION_STATUSES (spec 2.4 Phase 1 step 3, plan Phase 4 guard)", () => {
+  it("never includes draft, pending_review, or rejected", () => {
+    expect(SERVABLE_VERIFICATION_STATUSES).not.toContain("draft");
+    expect(SERVABLE_VERIFICATION_STATUSES).not.toContain("pending_review");
+    expect(SERVABLE_VERIFICATION_STATUSES).not.toContain("rejected");
+  });
+
+  it("is exactly verified and needs_reverification — both are publishable per spec 2.4", () => {
+    expect([...SERVABLE_VERIFICATION_STATUSES].sort()).toEqual(["needs_reverification", "verified"]);
   });
 });
