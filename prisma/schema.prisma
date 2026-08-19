@@ -1,7 +1,7 @@
 // Fun Facts App — database schema
 // Full v1.2 shape per spec sections 3.1 (Fact), 3.2 (Category), 3.3 (Session),
 // 3.4 (ThisDayInHistory, Phase 3), 3.5 (FactRevision, Phase 4), 3.6/5.3
-// (Report + abuse limiting, Phase 5).
+// (Report + abuse limiting, Phase 5), 5.8 (Event, Phase 7).
 
 generator client {
   provider = "prisma-client"
@@ -52,6 +52,30 @@ enum RevisionChangeType {
   reverified
   quality_rescored
   superseded
+}
+
+// spec 5.8's five tracked events. fact_viewed's four source values
+// (tile/another/random/share_page) are also how "category taps per
+// session" and "Another taps per session" are derived — neither needs its
+// own event type, they're just fact_viewed filtered by source.
+enum EventType {
+  fact_viewed
+  share_initiated
+  report_submitted
+  exhaustion_hit
+  share_page_arrival
+}
+
+enum FactViewSource {
+  tile
+  another
+  random
+  share_page
+}
+
+enum ExhaustionScope {
+  category
+  all
 }
 
 model Category {
@@ -194,8 +218,50 @@ model Session {
   lastActiveAt DateTime @default(now()) @map("last_active_at")
 
   reports Report[]
+  events  Event[]
 
   @@map("sessions")
+}
+
+// spec 5.8: "an event table and a handful of queries, not an analytics
+// platform." Deliberately flat (a handful of nullable columns) rather than
+// a JSON payload — every field here is something a query in
+// lib/analyticsQueries.ts actually filters or groups on, and a flat schema
+// keeps those queries plain SQL instead of JSON-path expressions.
+//
+// categorySlug is "" for This Day In History entries (matching the
+// existing HISTORY_CATEGORY.slug convention in app/fact/[slug]/page.tsx)
+// rather than null, so category-grouped queries don't need a null-handling
+// branch. shareSlug is stored instead of a Fact/ThisDayInHistory FK because
+// those are two different tables sharing one share_slug URL space (spec
+// 3.4) — a single string column reads across both without a variant FK.
+model Event {
+  id     String @id @default(uuid())
+  anonId String @map("anon_id")
+  session Session @relation(fields: [anonId], references: [anonId])
+
+  type EventType
+
+  // fact_viewed, share_initiated, report_submitted: which fact/history
+  // entry and category. null for exhaustion_hit (no single fact involved).
+  shareSlug    String? @map("share_slug")
+  categorySlug String? @map("category_slug")
+
+  // fact_viewed only.
+  source FactViewSource?
+
+  // exhaustion_hit only.
+  exhaustionScope ExhaustionScope? @map("exhaustion_scope")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // (anonId, createdAt) covers per-user-per-day queries (north star,
+  // session duration, retention); (type, createdAt) covers the
+  // content/acquisition aggregates that scan one event type across all users.
+  @@index([anonId, createdAt])
+  @@index([type, createdAt])
+  @@index([categorySlug, type])
+  @@map("events")
 }
 
 // Individual report rows, not just a counter — this is what makes dedup

@@ -65,7 +65,7 @@ export default function FactView({ fact, category, note }: FactViewProps) {
         <Link href="/" className="btn-secondary text-center">
           Different category
         </Link>
-        <ShareButton shareSlug={fact.shareSlug} shareTitle={ogTitle(fact.text)} />
+        <ShareButton shareSlug={fact.shareSlug} shareTitle={ogTitle(fact.text)} categorySlug={category.slug} />
         <Link href="/" className="btn-secondary text-center">
           Home
         </Link>

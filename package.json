@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "tsx scripts/seed-dev.ts",
+    "analytics": "tsx scripts/analytics.ts",
     "test": "vitest run",
     "postinstall": "prisma generate"
   },

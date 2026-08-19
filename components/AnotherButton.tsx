@@ -43,7 +43,7 @@ export default function AnotherButton({ categorySlug }: AnotherButtonProps) {
       // fallback below shares this handler's shape and does need a full
       // navigation, so both stay consistent.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = `/fact/${prefetchedSlug}`;
+      window.location.href = `/fact/${prefetchedSlug}?src=another`;
       return;
     }
     // Rare cache-miss: show a brief loading state instead of an instant
@@ -51,8 +51,10 @@ export default function AnotherButton({ categorySlug }: AnotherButtonProps) {
     // target URL is NOT unique per click, so it must stay a full navigation
     // — router.push() here would reintroduce the router-cache bug.
     setPending(true);
+    // src=another distinguishes this from a fresh tile tap on the same
+    // route (spec 5.8's fact_viewed source) — see app/api/next-fact/route.ts.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = `/api/next-fact?category=${categorySlug}`;
+    window.location.href = `/api/next-fact?category=${categorySlug}&src=another`;
   }
 
   return (

@@ -52,7 +52,11 @@ export default function HistoryCard({ shareSlug, text, initiallyExpanded }: Hist
     };
   }, [expanded]);
 
-  const href = `/fact/${shareSlug}`;
+  // src=tile: this is a Home-screen tap into a specific fact, same bucket
+  // as a category tile for spec 5.8's fact_viewed source. Without it, the
+  // fact page's default (no src param = share_page arrival) would
+  // misclassify every history-card tap as an external share visit.
+  const href = `/fact/${shareSlug}?src=tile`;
 
   if (!expanded) {
     return (

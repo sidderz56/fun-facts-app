@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { decideReport, shouldAutoPull } from "@/lib/reportingCore";
 import { autoPullFact } from "@/lib/factMutations";
 import { DEFAULT_AUTO_PULL_THRESHOLD } from "@/lib/constants";
+import { logEvent } from "@/lib/eventCapture";
 
 const ROLLING_WINDOW_MS = 60 * 60 * 1000; // spec 5.3: rolling hour, both limits
 const AUTO_PULL_THRESHOLD_KEY = "auto_pull_threshold";
@@ -83,7 +84,21 @@ export async function submitReport(
   // reports_since_review is "count of unresolved report rows" (spec 3.1) —
   // recomputed rather than incremented so it self-corrects if it ever drifts.
   const openReportCount = await prisma.report.count({ where: { factId, resolvedAt: null } });
-  await prisma.fact.update({ where: { id: factId }, data: { reportsSinceReview: openReportCount } });
+  const factForEvent = await prisma.fact.update({
+    where: { id: factId },
+    data: { reportsSinceReview: openReportCount },
+    include: { category: true },
+  });
+
+  // Logged only on an actual new row (spec 5.8's "report submitted"), not
+  // on idempotent repeat taps — those would inflate report rate per fact
+  // without representing distinct signal.
+  await logEvent({
+    anonId,
+    type: "report_submitted",
+    shareSlug: factForEvent.shareSlug,
+    categorySlug: factForEvent.category.slug,
+  });
 
   const threshold = await getAutoPullThreshold();
   if (shouldAutoPull(openReportCount, threshold)) {

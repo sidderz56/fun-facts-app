@@ -5,13 +5,14 @@ import { useState } from "react";
 type ShareButtonProps = {
   shareSlug: string;
   shareTitle: string;
+  categorySlug: string;
 };
 
 // Native Web Share API where available (mobile); fallback icon row (copy
 // link, X/Twitter) on desktop and unsupported browsers (spec 4.4). The menu
 // branch only ever renders after a client click, so referencing window here
 // carries no SSR/hydration-mismatch risk.
-export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps) {
+export default function ShareButton({ shareSlug, shareTitle, categorySlug }: ShareButtonProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
@@ -20,8 +21,23 @@ export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps)
     return `${window.location.origin}/fact/${shareSlug}`;
   }
 
+  // spec 5.8's "share initiated" — logged the moment a share action is
+  // taken (native sheet opened, link copied, X intent opened), not
+  // conditioned on whether the recipient ever actually opens the link.
+  // Fire-and-forget: a failed ping should never block or error the share
+  // itself.
+  function logShareInitiated() {
+    fetch("/api/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shareSlug, categorySlug }),
+      keepalive: true,
+    }).catch(() => {});
+  }
+
   async function handleClick() {
     if (typeof navigator.share === "function") {
+      logShareInitiated();
       try {
         await navigator.share({ title: shareTitle, url: shareUrl() });
       } catch {
@@ -35,6 +51,7 @@ export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps)
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(shareUrl());
+      logShareInitiated();
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -66,7 +83,10 @@ export default function ShareButton({ shareSlug, shareTitle }: ShareButtonProps)
             href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl())}`}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => setMenuOpen(false)}
+            onClick={() => {
+              logShareInitiated();
+              setMenuOpen(false);
+            }}
             className="whitespace-nowrap rounded-lg px-3 py-2 text-left hover:bg-[var(--btn-secondary-bg)]"
           >
             Share on X

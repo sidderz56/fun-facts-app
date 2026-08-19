@@ -6,8 +6,17 @@ import { pickCategoryFact, pickRandomFact } from "@/lib/selection";
 // Plain GET + redirect (not a client-side fetch) so every tap on Home and
 // every action button on the fact-view screen works as a normal link —
 // no client JS required for the core loop.
+//
+// The optional `src=another` param is how AnotherButton's slow-path
+// fallback (window.location.href = /api/next-fact?category=X) tells this
+// route apart from a fresh Home tile tap — both hit this same route with
+// just a category, so without it there'd be no way to log the right
+// fact_viewed source (spec 5.8) on the /fact/{slug} redirect target. A
+// bare tile/Random tap never sends this param, so it falls through to the
+// category-derived default below.
 export async function GET(request: NextRequest) {
   const categorySlug = request.nextUrl.searchParams.get("category");
+  const explicitSrc = request.nextUrl.searchParams.get("src");
   const session = await getOrCreateSession();
 
   if (categorySlug && categorySlug !== "random") {
@@ -25,7 +34,8 @@ export async function GET(request: NextRequest) {
     }
 
     await markFactSeen(session.anonId, fact.id, session.seenFactIds);
-    return NextResponse.redirect(new URL(`/fact/${fact.shareSlug}`, request.url));
+    const src = explicitSrc === "another" ? "another" : "tile";
+    return NextResponse.redirect(new URL(`/fact/${fact.shareSlug}?src=${src}`, request.url));
   }
 
   const fact = await pickRandomFact(session.seenFactIds);
@@ -36,5 +46,6 @@ export async function GET(request: NextRequest) {
   }
 
   await markFactSeen(session.anonId, fact.id, session.seenFactIds);
-  return NextResponse.redirect(new URL(`/fact/${fact.shareSlug}`, request.url));
+  const src = explicitSrc === "another" ? "another" : "random";
+  return NextResponse.redirect(new URL(`/fact/${fact.shareSlug}?src=${src}`, request.url));
 }

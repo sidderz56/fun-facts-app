@@ -8,8 +8,12 @@ import FactView from "@/components/FactView";
 import RetiredNotice from "@/components/RetiredNotice";
 import { ogTitle, ogDescription } from "@/lib/ogText";
 import { SERVABLE_VERIFICATION_STATUSES } from "@/lib/verification";
+import { logFactViewed, resolveSource } from "@/lib/eventCapture";
 
-type FactPageProps = { params: Promise<{ slug: string }> };
+type FactPageProps = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ src?: string }>;
+};
 
 function isServable(status: string): boolean {
   return (SERVABLE_VERIFICATION_STATUSES as readonly string[]).includes(status);
@@ -87,15 +91,25 @@ export async function generateMetadata({ params }: FactPageProps): Promise<Metad
   };
 }
 
-export default async function FactPage({ params }: FactPageProps) {
+export default async function FactPage({ params, searchParams }: FactPageProps) {
   const { slug } = await params;
+  const { src } = await searchParams;
   const resolved = await resolveDisplayFact(slug);
   if (!resolved) notFound();
+
+  const source = resolveSource(src);
+  const session = await getOrCreateSession();
 
   if (resolved.kind === "history") {
     const { entry } = resolved;
     // Updates date_last_shown so next year's rotation moves on (spec 3.4).
     await markHistoryEntryShown(entry.id);
+    await logFactViewed({
+      anonId: session.anonId,
+      shareSlug: entry.shareSlug,
+      categorySlug: HISTORY_CATEGORY.slug,
+      source,
+    });
 
     return (
       <FactView
@@ -110,18 +124,32 @@ export default async function FactPage({ params }: FactPageProps) {
   }
 
   const { original, display } = resolved;
-  const session = await getOrCreateSession();
   await markFactSeen(session.anonId, original.id, session.seenFactIds);
 
   if (!display) {
+    // Retired with no replacement — not a real content view, so no
+    // fact_viewed event (spec 5.8's content metrics are about facts people
+    // actually read, not dead-link landings).
     return <RetiredNotice category={original.category} />;
   }
 
   if (display.id !== original.id) {
     // Superseded — the replacement's own view, plus a note (spec 4.4).
     await markFactSeen(session.anonId, display.id, session.seenFactIds);
+    await logFactViewed({
+      anonId: session.anonId,
+      shareSlug: display.shareSlug,
+      categorySlug: display.category.slug,
+      source,
+    });
     return <FactView fact={display} category={display.category} note="This fact was updated." />;
   }
 
+  await logFactViewed({
+    anonId: session.anonId,
+    shareSlug: display.shareSlug,
+    categorySlug: display.category.slug,
+    source,
+  });
   return <FactView fact={display} category={display.category} />;
 }
